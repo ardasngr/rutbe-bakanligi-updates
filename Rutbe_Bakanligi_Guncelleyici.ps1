@@ -45,7 +45,8 @@ try {
   Log "Baslatiliyor. Yerel surum: $localVersion"
 
   $manifestUrl = Get-RawUrl 'latest.json'
-  $manifest = Invoke-RestMethod -Uri $manifestUrl -Headers $headers -TimeoutSec 30
+  $manifestResponse = Invoke-WebRequest -Uri $manifestUrl -Headers $headers -TimeoutSec 30 -UseBasicParsing
+  $manifest = $manifestResponse.Content | ConvertFrom-Json
   $remoteVersion = [string]$manifest.version
   if (-not $remoteVersion -or -not $manifest.patchPath -or -not $manifest.sha256) {
     throw 'Guncelleme manifesti eksik veya gecersiz.'
