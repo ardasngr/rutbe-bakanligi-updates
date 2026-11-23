@@ -1,75 +1,100 @@
 ﻿$ErrorActionPreference = 'Stop'
 $root = $PSScriptRoot
-$repo = 'ardasngr/rutbe-bakanligi-updates'
-$branch = 'main'
 $appName = 'Rutbe_Bakanligi_v7_0_1_TIM_SAVASLARI_HATA_DUZELTME.html'
 $appFile = Join-Path $root $appName
-$tokenFile = Join-Path $root 'github_token.dpapi'
 $versionFile = Join-Path $root 'local_version.json'
 $logFile = Join-Path $root 'guncelleyici.log'
+$rawBase = 'https://raw.githubusercontent.com/ardasngr/rutbe-bakanligi-updates/main'
+
 function Log([string]$Message) {
   $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message"
   Add-Content -LiteralPath $logFile -Value $line -Encoding UTF8
   Write-Host $line
 }
-function Get-GitHubToken {
-  if (-not (Test-Path -LiteralPath $tokenFile)) { throw 'GitHub erisim anahtari bulunamadi. KURULUM_BIR_KEZ.ps1 dosyasini bir kez calistir.' }
-  $secure = Get-Content -LiteralPath $tokenFile -Raw | ConvertTo-SecureString
-  $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-  try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
-  finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
-}
-function Get-GitHubFileBytes([string]$Path, [string]$Token) {
-  $encodedPath = ($Path -split '/') | ForEach-Object { [uri]::EscapeDataString($_) }
-  $url = "https://api.github.com/repos/$repo/contents/$($encodedPath -join '/')?ref=$branch"
-  $headers = @{
-    Authorization = "Bearer $Token"
-    Accept = 'application/vnd.github+json'
-    'X-GitHub-Api-Version' = '2022-11-28'
-    'User-Agent' = 'RutbeBakanligi-Updater'
-  }
-  $response = Invoke-RestMethod -Uri $url -Headers $headers -TimeoutSec 30
-  if (-not $response.content) { throw "GitHub dosya icerigi bos: $Path" }
-  return [Convert]::FromBase64String(($response.content -replace '\s',''))
-}
-try {
-  if (-not (Test-Path -LiteralPath $appFile -PathType Leaf)) { throw "$appName bulunamadi. Baslaticiyi oyun HTML dosyasinin bulundugu klasorden calistir." }
-  if (-not (Test-Path -LiteralPath $tokenFile)) { throw 'GitHub erisim anahtari yok. KURULUM_BIR_KEZ.ps1 dosyasini bir kez calistir.' }
-  $localVersion = '8.0.0'
+function Get-AppVersion([string]$Path) {
+  $html = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8)
+  $m = [regex]::Match($html, "const\s+RB_V8_VERSION\s*=\s*'([^']+)'\s*;")
+  if ($m.Success) { return $m.Groups[1].Value }
   if (Test-Path -LiteralPath $versionFile) {
-    try { $localVersion = [string](Get-Content -LiteralPath $versionFile -Raw | ConvertFrom-Json).version } catch { Log 'Yerel surum okunamadi; 8.0.0 varsayiliyor.' }
+    try { return [string](Get-Content -LiteralPath $versionFile -Raw | ConvertFrom-Json).version } catch {}
   }
-  if (-not $localVersion) { $localVersion = '8.0.0' }
-  Log "Baslatiliyor. Yerel surum: $localVersion"
-  $token = Get-GitHubToken
+  return '8.0.0'
+}
+function Get-RawUrl([string]$RelativePath) {
+  $parts = $RelativePath -split '/'
+  $safe = ($parts | ForEach-Object { [uri]::EscapeDataString($_) }) -join '/'
+  return "$rawBase/$safe?nocache=$([DateTimeOffset]::UtcNow.ToUnixTimeSeconds())"
+}
+
+try {
+  if (-not (Test-Path -LiteralPath $appFile -PathType Leaf)) {
+    throw "$appName bulunamadi. Baslatma dosyalarini oyunun HTML dosyasinin bulundugu klasorde tut."
+  }
+
+  # This public-read updater no longer needs any GitHub token.
+  foreach ($obsoleteTokenFile in @('github_token.txt','github_token.dpapi')) {
+    $obsoletePath = Join-Path $root $obsoleteTokenFile
+    if (Test-Path -LiteralPath $obsoletePath) {
+      Remove-Item -LiteralPath $obsoletePath -Force -ErrorAction SilentlyContinue
+    }
+  }
+
   [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-  $manifestBytes = Get-GitHubFileBytes 'latest.json' $token
-  $manifest = [Text.Encoding]::UTF8.GetString($manifestBytes) | ConvertFrom-Json
+  $headers = @{ 'Cache-Control' = 'no-cache'; 'User-Agent' = 'RutbeBakanligi-Updater' }
+  $localVersion = Get-AppVersion $appFile
+  Log "Baslatiliyor. Yerel surum: $localVersion"
+
+  $manifestUrl = Get-RawUrl 'latest.json'
+  $manifest = Invoke-RestMethod -Uri $manifestUrl -Headers $headers -TimeoutSec 30
   $remoteVersion = [string]$manifest.version
-  if (-not $remoteVersion -or -not $manifest.patchPath -or -not $manifest.sha256) { throw 'latest.json dosyasi eksik veya gecersiz.' }
+  if (-not $remoteVersion -or -not $manifest.patchPath -or -not $manifest.sha256) {
+    throw 'Guncelleme manifesti eksik veya gecersiz.'
+  }
+  if ([string]$manifest.type -ne 'powershell-patch') { throw 'Desteklenmeyen guncelleme turu.' }
+  if ([string]$manifest.patchPath -notmatch '^patches/[A-Za-z0-9._-]+\.ps1$') {
+    throw 'Manifestteki yama yolu guvenlik kontrolunden gecmedi.'
+  }
+
   if ([version]$remoteVersion -gt [version]$localVersion) {
-    if ([string]$manifest.type -ne 'powershell-patch') { throw 'Desteklenmeyen guncelleme turu.' }
     Log "Yeni surum bulundu: $remoteVersion"
-    $patchBytes = Get-GitHubFileBytes ([string]$manifest.patchPath) $token
     $patchTemp = Join-Path $root 'Rutbe_Bakanligi_patch.tmp.ps1'
-    [IO.File]::WriteAllBytes($patchTemp, $patchBytes)
+    $patchUrl = Get-RawUrl ([string]$manifest.patchPath)
+    Invoke-WebRequest -Uri $patchUrl -Headers $headers -OutFile $patchTemp -TimeoutSec 60 -UseBasicParsing
+    if (-not (Test-Path -LiteralPath $patchTemp) -or (Get-Item -LiteralPath $patchTemp).Length -lt 100) {
+      throw 'Yama dosyasi indirilemedi veya bos.'
+    }
     $actualHash = (Get-FileHash -LiteralPath $patchTemp -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualHash -ne ([string]$manifest.sha256).ToLowerInvariant()) {
       Remove-Item -LiteralPath $patchTemp -Force -ErrorAction SilentlyContinue
       throw 'SHA-256 dogrulamasi basarisiz; mevcut oyun dosyasi korunuyor.'
     }
+
     $patchOutput = & $patchTemp -AppPath $appFile 2>&1
-    if (($patchOutput -join "`n") -notmatch 'PATCH_OK\|8\.0\.1\|') { throw "Yama tamamlanamadi: $($patchOutput -join ' ')" }
+    $patchText = $patchOutput -join [Environment]::NewLine
+    if ($patchText -notmatch [regex]::Escape("PATCH_OK|$remoteVersion|")) {
+      throw "Yama beklenen onay mesajini vermedi: $patchText"
+    }
     Remove-Item -LiteralPath $patchTemp -Force -ErrorAction SilentlyContinue
-    @{ version = $remoteVersion; updatedAt = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $versionFile -Encoding UTF8
+
+    $installedVersion = Get-AppVersion $appFile
+    if ($installedVersion -ne $remoteVersion) { throw "Dosya guncellendi ancak HTML surumu beklenenden farkli: $installedVersion" }
+    @{ version = $remoteVersion; updatedAt = (Get-Date).ToString('o') } |
+      ConvertTo-Json | Set-Content -LiteralPath $versionFile -Encoding UTF8
     Log "Guncelleme tamamlandi: $localVersion -> $remoteVersion"
   } else {
     Log 'Yeni surum yok; mevcut oyun dosyasi aciliyor.'
+    @{ version = $localVersion; checkedAt = (Get-Date).ToString('o') } |
+      ConvertTo-Json | Set-Content -LiteralPath $versionFile -Encoding UTF8
   }
-  if (-not (Test-Path -LiteralPath $versionFile)) { @{ version = $localVersion; installedAt = (Get-Date).ToString('o') } | ConvertTo-Json | Set-Content -LiteralPath $versionFile -Encoding UTF8 }
   Start-Process -FilePath $appFile
-} catch {
-  Log "GUNCELLEME KONTROLU / BASLATMA HATASI: $($_.Exception.Message)"
-  Write-Host $_.Exception.Message -ForegroundColor Red
-  if (Test-Path -LiteralPath $appFile) { Start-Process -FilePath $appFile }
+}
+catch {
+  Log "GUNCELLEME KONTROLU BASARISIZ: $($_.Exception.Message)"
+  Write-Host "Guncelleme kontrol edilemedi: $($_.Exception.Message)" -ForegroundColor Yellow
+  if (Test-Path -LiteralPath $appFile) {
+    Write-Host 'Mevcut oyun surumu aciliyor; yerel dosya korunmustur.' -ForegroundColor Green
+    Start-Process -FilePath $appFile
+  } else {
+    exit 1
+  }
 }
