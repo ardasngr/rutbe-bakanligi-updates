@@ -8,8 +8,9 @@ $replacements = @(
   @('<title>Rütbe Bakanlığı v8.0.0 - Komuta ve Veri Güvenliği</title>', '<title>Rütbe Bakanlığı v8.0.1 - Güncelleme Testi</title>'),
   @('SÜRÜM 8.0.0 · VERİ GÜVENLİĞİ', 'SÜRÜM 8.0.1 · GÜNCELLEME TESTİ'),
   @('<span class="rb-version-pill">v8.0.0</span>', '<span class="rb-version-pill">v8.0.1</span>'),
-  @('8.0.0 · KAYIT GÜVENLİĞİ', '8.0.1 · GÜNCELLEME DOĞRULAMASI'),
+  @('<div class="eyebrow">8.0.0 · KAYIT GÜVENLİĞİ</div>', '<div class="eyebrow">8.0.1 · GÜNCELLEME DOĞRULAMASI</div>'),
   @('Rütbe Bakanlığı 8.0.0</h2>', 'Rütbe Bakanlığı 8.0.1</h2>'),
+  @('<div class="rb-update-status" id="rbUpdateSourceStatus">Güncelleme kaynağı: henüz bağlanmadı</div>', '<div class="rb-update-status" id="rbUpdateSourceStatus">Güncelleme kaynağı: henüz bağlanmadı</div><p class="rb-help"><b>8.0.1:</b> Güncelleme başlatıcısının sürüm bulma, SHA-256 doğrulama, önceki dosyayı yedekleme ve aynı HTML dosyasını yenileme akışı için test sürümü.</p>'),
   @("const RB_V8_VERSION = '8.0.0';", "const RB_V8_VERSION = '8.0.1';")
 )
 foreach ($pair in $replacements) {
