@@ -1,0 +1,1 @@
+# rutbe-bakanligi-updates
