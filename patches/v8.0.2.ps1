@@ -12,7 +12,8 @@ if ($oldVersion -notin @('8.0.0','8.0.1')) { throw "Beklenmeyen kaynak surum: $o
 function Replace-ExactlyOnce([string]$Text, [string]$Pattern, [string]$Replacement, [string]$Label) {
   $count = [regex]::Matches($Text, $Pattern).Count
   if ($count -ne 1) { throw "Yama durduruldu: $Label icin tek eslesme bekleniyordu; bulunan: $count" }
-  return [regex]::Replace($Text, $Pattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $Replacement }, 1)
+  $rx = [regex]::new($Pattern)
+  return $rx.Replace($Text, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $Replacement }, 1)
 }
 
 $source = Replace-ExactlyOnce $source '<title>Rütbe Bakanlığı v8\.0\.[01] - [^<]*</title>' '<title>Rütbe Bakanlığı v8.0.2 - Otomatik Güncelleme Testi</title>' 'HTML basligi'
@@ -24,7 +25,8 @@ $source = Replace-ExactlyOnce $source "const RB_V8_VERSION = '8\.0\.[01]';" "con
 
 $releaseParagraph = '<p class="rb-help"><b>8.0.2:</b> Otomatik güncelleme doğrulama sürümü. Oyun kayıt anahtarı ve mevcut personel verileri korunur.</p>'
 if ($source -match '<p class="rb-help"><b>8\.0\.[01]:</b>[^<]*</p>') {
-  $source = [regex]::Replace($source, '<p class="rb-help"><b>8\.0\.[01]:</b>[^<]*</p>', [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $releaseParagraph }, 1)
+  $rx = [regex]::new('<p class="rb-help"><b>8\.0\.[01]:</b>[^<]*</p>')
+  $source = $rx.Replace($source, [System.Text.RegularExpressions.MatchEvaluator]{ param($m) $releaseParagraph }, 1)
 } else {
   $anchor = '<div class="rb-update-status" id="rbUpdateSourceStatus">Güncelleme kaynağı: henüz bağlanmadı</div>'
   if (([regex]::Matches($source, [regex]::Escape($anchor))).Count -ne 1) { throw 'Guncelleme merkezi notu icin ekleme noktasi bulunamadi.' }
