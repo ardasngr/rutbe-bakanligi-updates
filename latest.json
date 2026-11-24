@@ -1,7 +1,7 @@
 {
-  "version": "8.0.4",
+  "version": "8.0.3",
   "type": "powershell-patch",
-  "patchPath": "patches/v8.0.4.ps1",
-  "sha256": "93337c57ab690ef100ff2bc94bf28e9f5ecafe9143c392e8ae61d7fca2d1353f",
-  "notes": "8.0.4: otomatik güncelleme test sürümü."
+  "patchPath": "patches/v8.0.3.ps1",
+  "sha256": "ad6e7fb09602d05ae014c6f789aa7b9b16118128e1b3fb926ab84a47d3241a98",
+  "notes": "8.0.3: otomatik güncelleme test sürümü. 8.0.2 üzerinden sürüm tespiti, yedekleme ve kayıt koruma akışı doğrulanır."
 }
